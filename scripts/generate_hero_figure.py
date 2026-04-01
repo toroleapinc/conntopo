@@ -116,11 +116,11 @@ def plot_combined_hero(kuramoto, wilson_cowan, output_path="figures/hero_combine
                bbox_to_anchor=(0.52, -0.01), fontsize=10, frameon=True,
                fancybox=False, edgecolor="#CCCCCC", columnspacing=1.5)
 
-    # Title with spacing
-    fig.text(0.52, 0.96,
+    # Title and subtitle with generous gap
+    fig.text(0.52, 0.97,
              "Human Brain Connectome Produces Distinct Neural Dynamics",
              ha="center", fontsize=18, fontweight="bold", color=REAL_COLOR)
-    fig.text(0.52, 0.925,
+    fig.text(0.52, 0.91,
              "Robust across two independent dynamics models  |  TVB 76-region connectome vs. 5 null network types",
              ha="center", fontsize=11, color="#777777")
 
@@ -136,7 +136,7 @@ def plot_wc_oscillation_highlight(wc_results, output_path="figures/wc_oscillatio
     couplings = sorted(wc_results.keys(), key=float)
     x = [float(c) for c in couplings]
 
-    fig, ax = plt.subplots(figsize=(10, 7))
+    fig, ax = plt.subplots(figsize=(10, 8))
 
     real_y = [wc_results[c].get("global_variance", {}).get("real_mean", 0) for c in couplings]
     ax.plot(x, real_y, color=REAL_COLOR, linewidth=4, marker="o", markersize=10,
@@ -184,16 +184,16 @@ def plot_wc_oscillation_highlight(wc_results, output_path="figures/wc_oscillatio
     ax.legend(loc="center left", bbox_to_anchor=(0.0, 0.45),
               frameon=True, fancybox=False, edgecolor="#CCCCCC", fontsize=10)
 
-    # Title and subtitle as separate fig-level text for precise control
-    fig.text(0.5, 0.97,
+    # Shrink axes to make generous room for title block
+    ax.set_position([0.10, 0.10, 0.85, 0.72])
+
+    # Title and subtitle with large gap
+    fig.text(0.52, 0.96,
              "The Real Connectome Sustains Oscillations — Random Wiring Cannot",
              ha="center", fontsize=15, fontweight="bold", color=REAL_COLOR)
-    fig.text(0.5, 0.93,
+    fig.text(0.52, 0.89,
              "Wilson-Cowan E/I dynamics on 76-region human connectome",
              ha="center", fontsize=11, color="#777777")
-
-    # Shrink axes to make room for title
-    ax.set_position([0.1, 0.1, 0.85, 0.78])
 
     fig.savefig(output_path)
     fig.savefig(output_path.replace(".png", ".svg"))
@@ -267,11 +267,12 @@ def plot_effect_heatmap(results, model_name, output_path="figures/effect_sizes.p
 
     # Title with proper spacing — no subtitle overlap
     ax.set_title(
-        f"Effect Sizes: Real vs. Null — {model_name} (G={best_coupling})\n"
-        f"|d| > 0.8 = large effect  |  values clipped to [-15, 15]",
-        fontsize=13, fontweight="bold", color=REAL_COLOR, pad=15,
-        linespacing=1.6,
+        f"Effect Sizes: Real vs. Null — {model_name} (G={best_coupling})",
+        fontsize=13, fontweight="bold", color=REAL_COLOR, pad=30,
     )
+    ax.text(0.5, 1.03,
+            "|d| > 0.8 = large effect  |  values clipped to [-15, 15]",
+            transform=ax.transAxes, ha="center", fontsize=10, color="#888888")
 
     fig.savefig(output_path)
     print(f"Saved: {output_path}")
