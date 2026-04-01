@@ -1,31 +1,27 @@
 # conntopo
 
-**Does human brain wiring actually matter for neural computation?**
+**An open-source toolkit for comparing neural dynamics on brain connectomes vs null network models.**
 
-We tested the real [Human Connectome Project](https://www.humanconnectome.org/) data against 5 types of random wiring using **two independent dynamics models** (Kuramoto and Wilson-Cowan). The real connectome produces massively different dynamics — and in one model, **random wiring collapses to silence while the real connectome sustains oscillations.**
+conntopo simulates Kuramoto and Wilson-Cowan dynamics on the Human Connectome Project structural connectivity data and systematically compares against 5 types of null network models. It reproduces and extends well-established findings in computational connectomics, providing a clean, reproducible Python implementation.
 
 ![Hero Figure](figures/hero_combined.png)
 
-*Top row: Kuramoto oscillators. Bottom row: Wilson-Cowan E/I model. Real human connectome (black) vs. 5 null network models. Both models show the real connectome produces distinct dynamics, especially at moderate coupling.*
+## What This Tool Does
 
-## Key Findings
+- Load real human brain structural connectivity (76 regions from HCP/TVB)
+- Simulate two dynamics models: **Kuramoto** phase oscillators and **Wilson-Cowan** excitatory-inhibitory populations
+- Generate 5 types of null network models (degree-preserving, Erdős-Rényi, random geometric, lattice, weight-shuffled)
+- Compare dynamics across metrics: metastability, synchrony, functional connectivity, regional differentiation, spectral properties
+- Statistical analysis with effect sizes and permutation testing
 
-### Result 1: The real connectome is dynamically distinct from random wiring
-- **Kuramoto:** 111/210 comparisons significant (p<0.05), effect sizes d=5-16
-- **Wilson-Cowan:** 48/150 comparisons significant (p<0.05), effect sizes d=2-2422
-- **Robust across both models** — not an artifact of model choice
+## Context
 
-### Result 2: The real connectome sustains oscillations that random wiring cannot
+The finding that real brain connectome topology produces different dynamics than random wiring is well-established in computational neuroscience (see [Honey et al. 2007](https://www.pnas.org/doi/10.1073/pnas.0701519104), [Cabral et al. 2011](https://pubmed.ncbi.nlm.nih.gov/21511044/), [Deco & Kringelbach 2017](https://www.nature.com/articles/s41598-017-03073-5)). For a comprehensive review of null model approaches, see [Váša & Mišić 2022](https://www.nature.com/articles/s41583-022-00601-9).
 
-![Oscillation Highlight](figures/wc_oscillation_highlight.png)
-
-In the Wilson-Cowan model, the real connectome sustains excitatory-inhibitory oscillations (variance=0.02) while Erdős-Rényi, lattice, and random geometric networks **collapse to fixed points** (variance≈0). Effect sizes d>2000. The specific wiring pattern of the human brain is what keeps it oscillating.
-
-### Result 3: It's the specific wiring, not just graph statistics
-Even **degree-preserving rewiring** (same number of connections per region, but random targets) produces different dynamics. This means it's not just the hub structure or density — it's the precise connectivity pattern that matters.
-
-### Result 4: The effect peaks at moderate coupling
-Both models show the strongest topology-dynamics differences at moderate coupling strengths — the regime corresponding to the brain's operating point near criticality. At very low coupling, regions don't interact enough for topology to matter. At very high coupling, everything synchronizes regardless of wiring.
+This toolkit provides a clean, pip-installable Python implementation of this methodology for researchers who want to:
+- Reproduce these established results
+- Test their own connectome data against null models
+- Use it as a starting point for more specific analyses
 
 ## Quick Start
 
@@ -43,43 +39,16 @@ from conntopo.analysis.metrics import compute_all_metrics
 # Load real human brain connectome (76 regions, 1560 connections)
 brain = Connectome.from_bundled("tvb76")
 
-# Simulate Kuramoto oscillators on the real connectome
+# Simulate Kuramoto oscillators
 model = KuramotoModel(brain.weights, global_coupling=1.0)
 result = model.simulate(duration=5000, dt=0.1, transient=1000, seed=42)
-real_metrics = compute_all_metrics(result, model_type="kuramoto")
+metrics = compute_all_metrics(result, model_type="kuramoto")
 
 # Compare against random wiring
 nulls = generate_null_ensemble(brain, "erdos_renyi", n_instances=20, seed=42)
-null_metrics = []
-for null_conn in nulls:
-    m = KuramotoModel(null_conn.weights, global_coupling=1.0)
-    r = m.simulate(duration=5000, dt=0.1, transient=1000, seed=42)
-    null_metrics.append(compute_all_metrics(r, model_type="kuramoto"))
-
-print(f"Real metastability:  {real_metrics['metastability']:.4f}")
-print(f"Null metastability:  {sum(m['metastability'] for m in null_metrics)/len(null_metrics):.4f}")
 ```
 
-## Reproduce the Full Experiment
-
-```bash
-git clone https://github.com/toroleapinc/conntopo.git
-cd conntopo
-pip install -e ".[dev]"
-
-# Run both experiments (~20 min each)
-python experiments/01_spontaneous_dynamics.py --model kuramoto
-python experiments/01_spontaneous_dynamics.py --model wilson_cowan
-
-# Generate all figures
-python scripts/generate_hero_figure.py
-```
-
-## Methodology
-
-### Null Models
-
-We compare the real connectome against 5 null network types, each controlling for different properties:
+## Null Models
 
 | Null Model | Preserves | Destroys |
 |---|---|---|
@@ -89,40 +58,24 @@ We compare the real connectome against 5 null network types, each controlling fo
 | **Lattice** | Node/edge count | All heterogeneity |
 | **Weight-shuffled** | Binary topology | Weight-topology correlations |
 
-### Dynamics Models
+## Reproduce Experiments
 
-- **Kuramoto oscillators** — phase coupling model, standard for studying synchronization
-- **Wilson-Cowan** — excitatory-inhibitory population model, captures oscillatory E/I dynamics
+```bash
+git clone https://github.com/toroleapinc/conntopo.git
+cd conntopo
+pip install -e ".[dev]"
+python experiments/01_spontaneous_dynamics.py --model kuramoto
+python experiments/01_spontaneous_dynamics.py --model wilson_cowan
+python scripts/generate_hero_figure.py
+```
 
-### Statistical Analysis
+## Related Work
 
-- Mann-Whitney U tests (non-parametric) for each metric × null type comparison
-- Cohen's d effect sizes
-- 20 null model instances per type, 5 trials per condition
-- 6 coupling strengths per model spanning subcritical to supercritical regimes
-
-## Why This Matters
-
-The [Drosophila connectome study](https://www.nature.com/articles/s41586-024-07939-3) (Lappalainen et al., Nature 2024) showed that neural wiring predicts function at the single-neuron level in fruit flies. We extend this question to the **human macro-connectome**: does the large-scale wiring architecture of the human brain — its modular hierarchy, rich-club hubs, and small-world topology — actively shape the dynamics of neural computation?
-
-**The answer is yes.** And the effect is not subtle.
+For the next step — testing whether region-specific functional roles emerge from topology — see our companion project [encephagen](https://github.com/toroleapinc/encephagen).
 
 ## Data
 
-Structural connectivity from [The Virtual Brain](https://www.thevirtualbrain.org/) project, derived from Human Connectome Project diffusion MRI tractography (76 cortical and subcortical regions).
-
-## Citation
-
-If you use conntopo in your research, please cite:
-
-```bibtex
-@software{conntopo2026,
-  title={conntopo: Does connectome topology shape neural dynamics?},
-  author={edvatar},
-  year={2026},
-  url={https://github.com/toroleapinc/conntopo}
-}
-```
+Structural connectivity from [The Virtual Brain](https://www.thevirtualbrain.org/), derived from Human Connectome Project diffusion MRI tractography.
 
 ## License
 
