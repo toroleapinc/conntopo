@@ -184,14 +184,16 @@ def plot_wc_oscillation_highlight(wc_results, output_path="figures/wc_oscillatio
     ax.legend(loc="center left", bbox_to_anchor=(0.0, 0.45),
               frameon=True, fancybox=False, edgecolor="#CCCCCC", fontsize=10)
 
-    # Title with generous spacing between lines
-    ax.set_title(
-        "The Real Connectome Sustains Oscillations — Random Wiring Cannot",
-        fontsize=15, fontweight="bold", color=REAL_COLOR, pad=40,
-    )
-    ax.text(0.5, 1.055,
-            "Wilson-Cowan E/I dynamics on 76-region human connectome",
-            transform=ax.transAxes, ha="center", fontsize=11, color="#777777")
+    # Title and subtitle as separate fig-level text for precise control
+    fig.text(0.5, 0.97,
+             "The Real Connectome Sustains Oscillations — Random Wiring Cannot",
+             ha="center", fontsize=15, fontweight="bold", color=REAL_COLOR)
+    fig.text(0.5, 0.93,
+             "Wilson-Cowan E/I dynamics on 76-region human connectome",
+             ha="center", fontsize=11, color="#777777")
+
+    # Shrink axes to make room for title
+    ax.set_position([0.1, 0.1, 0.85, 0.78])
 
     fig.savefig(output_path)
     fig.savefig(output_path.replace(".png", ".svg"))
