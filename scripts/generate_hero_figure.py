@@ -1,40 +1,56 @@
-"""Generate figures for both Kuramoto and Wilson-Cowan results.
+"""Generate publication-quality figures for conntopo results.
 
 Creates:
-1. Hero figure: 2-row panel (Kuramoto top, Wilson-Cowan bottom)
-2. Effect size heatmaps for both models
+1. Hero combined figure (Kuramoto + Wilson-Cowan)
+2. The killer figure: oscillation collapse in Wilson-Cowan
+3. Effect size heatmaps
 """
 
 import json
 from pathlib import Path
 
 import matplotlib.pyplot as plt
-import matplotlib
+import matplotlib as mpl
 import numpy as np
+from matplotlib.patches import FancyArrowPatch
 
-matplotlib.rcParams.update({
-    "font.size": 11,
+# --- Publication-quality style ---
+plt.style.use("default")
+mpl.rcParams.update({
+    "figure.facecolor": "#FAFAFA",
+    "axes.facecolor": "#FAFAFA",
+    "savefig.facecolor": "#FAFAFA",
     "font.family": "sans-serif",
-    "axes.linewidth": 1.2,
-    "figure.dpi": 150,
+    "font.sans-serif": ["DejaVu Sans", "Helvetica", "Arial"],
+    "font.size": 13,
+    "axes.titlesize": 15,
+    "axes.titleweight": "bold",
+    "axes.labelsize": 13,
+    "axes.labelweight": "medium",
+    "axes.linewidth": 1.0,
+    "axes.spines.top": False,
+    "axes.spines.right": False,
+    "xtick.labelsize": 11,
+    "ytick.labelsize": 11,
+    "legend.fontsize": 10,
+    "legend.framealpha": 0.9,
+    "legend.edgecolor": "#CCCCCC",
+    "grid.alpha": 0.25,
+    "grid.linewidth": 0.8,
+    "figure.dpi": 200,
+    "savefig.dpi": 200,
+    "savefig.bbox": "tight",
+    "savefig.pad_inches": 0.15,
 })
 
+# Color palette — colorblind-friendly, high contrast
+REAL_COLOR = "#1a1a2e"
 NULL_STYLES = {
-    "degree_preserving": {"color": "#E74C3C", "label": "Degree-preserving rewire"},
-    "erdos_renyi": {"color": "#3498DB", "label": "Erdős-Rényi random"},
-    "lattice": {"color": "#2ECC71", "label": "Lattice"},
-    "weight_shuffled": {"color": "#9B59B6", "label": "Weight-shuffled"},
-    "random_geometric": {"color": "#F39C12", "label": "Random geometric"},
-}
-
-METRICS_DISPLAY = {
-    "metastability": "Metastability",
-    "mean_synchrony": "Mean Synchrony",
-    "regional_differentiation": "Regional Differentiation",
-    "global_variance": "Global Variance",
-    "freq_diversity": "Frequency Diversity",
-    "mean_peak_freq": "Mean Peak Frequency",
-    "mean_fc": "Mean Functional Connectivity",
+    "degree_preserving": {"color": "#e63946", "label": "Degree-preserving", "marker": "s", "ls": "-"},
+    "erdos_renyi":       {"color": "#457b9d", "label": "Erdős-Rényi", "marker": "D", "ls": "-"},
+    "lattice":           {"color": "#2a9d8f", "label": "Lattice", "marker": "^", "ls": "-"},
+    "weight_shuffled":   {"color": "#e9c46a", "label": "Weight-shuffled", "marker": "v", "ls": "-"},
+    "random_geometric":  {"color": "#f4a261", "label": "Random geometric", "marker": "P", "ls": "-"},
 }
 
 
@@ -43,72 +59,143 @@ def load_results(path: str) -> dict:
         return json.load(f)
 
 
-def _plot_metric_row(axes, results, metrics_to_plot, model_label):
-    """Plot one row of metrics (one dynamics model)."""
+def _plot_metric(ax, results, metric, ylabel, show_legend=False):
+    """Plot one metric: real line + null model lines with markers."""
     couplings = sorted(results.keys(), key=float)
-    coupling_vals = [float(c) for c in couplings]
+    x = [float(c) for c in couplings]
 
-    for ax, (metric, ylabel) in zip(axes, metrics_to_plot):
-        real_vals = [results[c].get(metric, {}).get("real_mean", np.nan) for c in couplings]
-        ax.plot(coupling_vals, real_vals, "k-o", linewidth=2.5, markersize=6,
-                label="Real human connectome", zorder=10)
+    # Real connectome — thick, prominent
+    real_y = [results[c].get(metric, {}).get("real_mean", np.nan) for c in couplings]
+    ax.plot(x, real_y, color=REAL_COLOR, linewidth=3.5, marker="o", markersize=9,
+            markerfacecolor="white", markeredgewidth=2.5, markeredgecolor=REAL_COLOR,
+            label="Real connectome", zorder=10)
 
-        for null_type, style in NULL_STYLES.items():
-            null_vals = [results[c].get(metric, {}).get(f"{null_type}_mean", np.nan)
-                         for c in couplings]
-            ax.plot(coupling_vals, null_vals, "--", color=style["color"],
-                    linewidth=1.5, alpha=0.8, label=style["label"])
+    # Null models — thinner, colored, with distinct markers
+    for null_type, style in NULL_STYLES.items():
+        null_y = [results[c].get(metric, {}).get(f"{null_type}_mean", np.nan) for c in couplings]
+        ax.plot(x, null_y, color=style["color"], linewidth=1.8,
+                marker=style["marker"], markersize=6, markerfacecolor=style["color"],
+                markeredgewidth=0, alpha=0.85, label=style["label"], ls=style["ls"])
 
-        ax.set_xlabel("Coupling Strength (G)")
-        ax.set_ylabel(ylabel)
-        ax.set_xscale("log")
-        ax.grid(True, alpha=0.3)
-        ax.spines["top"].set_visible(False)
-        ax.spines["right"].set_visible(False)
+    ax.set_ylabel(ylabel)
+    ax.set_xscale("log")
+    ax.grid(True, axis="y")
 
-    axes[0].set_title(model_label, fontsize=12, fontweight="bold", loc="left")
+    if show_legend:
+        ax.legend(loc="best", frameon=True, fancybox=False)
 
 
 def plot_combined_hero(kuramoto: dict, wilson_cowan: dict,
                        output_path: str = "figures/hero_combined.png"):
-    """2-row hero figure: Kuramoto (top) and Wilson-Cowan (bottom)."""
-    fig, axes = plt.subplots(2, 3, figsize=(16, 9))
+    """2-row hero figure: Kuramoto top, Wilson-Cowan bottom."""
+    fig, axes = plt.subplots(2, 3, figsize=(18, 10), gridspec_kw={"hspace": 0.35, "wspace": 0.3})
 
-    kuramoto_metrics = [
-        ("metastability", "Metastability"),
-        ("mean_synchrony", "Mean Synchrony"),
-        ("regional_differentiation", "Regional Diff."),
-    ]
-    wc_metrics = [
-        ("global_variance", "Global Variance"),
-        ("regional_differentiation", "Regional Diff."),
-        ("mean_fc", "Mean FC"),
-    ]
+    # Row labels
+    axes[0][0].text(-0.25, 0.5, "Kuramoto\nOscillators", transform=axes[0][0].transAxes,
+                    fontsize=14, fontweight="bold", va="center", ha="center",
+                    rotation=90, color="#555555")
+    axes[1][0].text(-0.25, 0.5, "Wilson-Cowan\nE/I Model", transform=axes[1][0].transAxes,
+                    fontsize=14, fontweight="bold", va="center", ha="center",
+                    rotation=90, color="#555555")
 
-    _plot_metric_row(axes[0], kuramoto, kuramoto_metrics, "Kuramoto Oscillators")
-    _plot_metric_row(axes[1], wilson_cowan, wc_metrics, "Wilson-Cowan E/I Model")
+    # Kuramoto row
+    _plot_metric(axes[0][0], kuramoto, "metastability", "Metastability")
+    _plot_metric(axes[0][1], kuramoto, "mean_synchrony", "Mean Synchrony")
+    _plot_metric(axes[0][2], kuramoto, "regional_differentiation", "Regional Differentiation", show_legend=True)
 
-    handles, labels = axes[0][0].get_legend_handles_labels()
-    fig.legend(handles, labels, loc="lower center", ncol=3,
-               bbox_to_anchor=(0.5, -0.06), fontsize=10, frameon=False)
+    # Wilson-Cowan row
+    _plot_metric(axes[1][0], wilson_cowan, "global_variance", "Global Variance\n(oscillation strength)")
+    _plot_metric(axes[1][1], wilson_cowan, "regional_differentiation", "Regional Differentiation")
+    _plot_metric(axes[1][2], wilson_cowan, "mean_fc", "Mean Functional\nConnectivity")
+
+    # X labels only on bottom row
+    for ax in axes[1]:
+        ax.set_xlabel("Coupling Strength (G)")
 
     fig.suptitle(
-        "Human Brain Connectome Produces Distinct Dynamics vs. Null Models\n"
-        "Robust across two independent dynamics models (TVB 76-region connectome)",
-        fontsize=14, fontweight="bold", y=1.01,
+        "Human Brain Connectome Produces Distinct Neural Dynamics",
+        fontsize=20, fontweight="bold", y=0.98, color="#1a1a2e",
+    )
+    fig.text(0.5, 0.935,
+             "Robust across two independent dynamics models — TVB 76-region connectome vs. 5 null network types",
+             ha="center", fontsize=13, color="#666666")
+
+    Path(output_path).parent.mkdir(parents=True, exist_ok=True)
+    fig.savefig(output_path, facecolor=fig.get_facecolor())
+    fig.savefig(output_path.replace(".png", ".svg"), facecolor=fig.get_facecolor())
+    print(f"Saved: {output_path}")
+    plt.close()
+
+
+def plot_wc_oscillation_highlight(wc_results: dict,
+                                  output_path: str = "figures/wc_oscillation_highlight.png"):
+    """The killer figure: real connectome oscillates, random wiring dies."""
+    couplings = sorted(wc_results.keys(), key=float)
+    x = [float(c) for c in couplings]
+
+    fig, ax = plt.subplots(figsize=(10, 6.5))
+
+    # Real connectome — bold, prominent
+    real_y = [wc_results[c].get("global_variance", {}).get("real_mean", 0) for c in couplings]
+    ax.plot(x, real_y, color=REAL_COLOR, linewidth=4, marker="o", markersize=11,
+            markerfacecolor="white", markeredgewidth=3, markeredgecolor=REAL_COLOR,
+            label="Real human connectome", zorder=10)
+
+    # Fill under real curve
+    ax.fill_between(x, 0, real_y, color=REAL_COLOR, alpha=0.06)
+
+    # Null models
+    for null_type, style in NULL_STYLES.items():
+        null_y = [wc_results[c].get("global_variance", {}).get(f"{null_type}_mean", 0)
+                  for c in couplings]
+        ax.plot(x, null_y, color=style["color"], linewidth=2.2,
+                marker=style["marker"], markersize=7, markerfacecolor=style["color"],
+                markeredgewidth=0, alpha=0.85, label=style["label"])
+
+    ax.set_xlabel("Global Coupling Strength (G)", fontsize=14)
+    ax.set_ylabel("Global Variance (oscillation strength)", fontsize=14)
+    ax.set_xscale("log")
+    ax.grid(True, axis="y")
+
+    # Annotations
+    real_peak_idx = np.argmax(real_y)
+    ax.annotate(
+        "Real connectome\nsustains oscillations",
+        xy=(x[1], real_y[1]),
+        xytext=(x[2] * 2, real_y[0] * 0.85),
+        fontsize=13, fontweight="bold", color=REAL_COLOR,
+        arrowprops=dict(arrowstyle="-|>", color=REAL_COLOR, lw=2),
+        bbox=dict(boxstyle="round,pad=0.4", facecolor="white", edgecolor=REAL_COLOR, alpha=0.9),
     )
 
-    plt.tight_layout()
-    Path(output_path).parent.mkdir(parents=True, exist_ok=True)
-    fig.savefig(output_path, bbox_inches="tight", facecolor="white")
-    fig.savefig(output_path.replace(".png", ".svg"), bbox_inches="tight", facecolor="white")
+    ax.annotate(
+        "Random wiring\ncollapses to silence",
+        xy=(x[3], 0.001),
+        xytext=(x[3] * 1.5, real_y[0] * 0.4),
+        fontsize=12, fontweight="bold", color="#e63946",
+        arrowprops=dict(arrowstyle="-|>", color="#e63946", lw=2),
+        bbox=dict(boxstyle="round,pad=0.4", facecolor="white", edgecolor="#e63946", alpha=0.9),
+    )
+
+    ax.legend(loc="upper right", frameon=True, fancybox=False, fontsize=11)
+
+    ax.set_title(
+        "The Real Connectome Sustains Oscillations — Random Wiring Cannot",
+        fontsize=16, fontweight="bold", color=REAL_COLOR, pad=15,
+    )
+    ax.text(0.5, 1.02,
+            "Wilson-Cowan E/I dynamics on 76-region human connectome",
+            transform=ax.transAxes, ha="center", fontsize=12, color="#666666")
+
+    fig.savefig(output_path, facecolor=fig.get_facecolor())
+    fig.savefig(output_path.replace(".png", ".svg"), facecolor=fig.get_facecolor())
     print(f"Saved: {output_path}")
     plt.close()
 
 
 def plot_effect_heatmap(results: dict, model_name: str,
                         output_path: str = "figures/effect_sizes.png"):
-    """Heatmap of Cohen's d at the best coupling strength."""
+    """Heatmap of Cohen's d at the most informative coupling strength."""
     couplings = sorted(results.keys(), key=float)
 
     metrics = [m for m in ["metastability", "mean_synchrony",
@@ -117,8 +204,18 @@ def plot_effect_heatmap(results: dict, model_name: str,
                if any(m in results[c] for c in couplings)]
 
     null_types = list(NULL_STYLES.keys())
+    null_labels = [NULL_STYLES[nt]["label"] for nt in null_types]
 
-    # Find coupling with most significant results
+    metric_labels = {
+        "metastability": "Metastability",
+        "mean_synchrony": "Synchrony",
+        "regional_differentiation": "Regional Diff.",
+        "global_variance": "Global Variance",
+        "freq_diversity": "Freq. Diversity",
+        "mean_peak_freq": "Peak Frequency",
+    }
+
+    # Find best coupling
     best_coupling = couplings[1] if len(couplings) > 1 else couplings[0]
     best_count = 0
     for c in couplings:
@@ -132,83 +229,47 @@ def plot_effect_heatmap(results: dict, model_name: str,
     for i, metric in enumerate(metrics):
         for j, null_type in enumerate(null_types):
             d = results[best_coupling].get(metric, {}).get(f"{null_type}_d", 0)
-            data[i, j] = np.clip(d, -15, 15)  # Clip extreme values for visualization
+            data[i, j] = np.clip(d, -15, 15)
 
-    fig, ax = plt.subplots(figsize=(10, 5))
-    im = ax.imshow(data, cmap="RdBu_r", aspect="auto", vmin=-15, vmax=15)
+    fig, ax = plt.subplots(figsize=(11, 5.5))
+
+    cmap = mpl.colors.LinearSegmentedColormap.from_list(
+        "custom_rdbu", ["#457b9d", "#a8dadc", "#f1faee", "#e9c46a", "#e63946"], N=256
+    )
+    im = ax.imshow(data, cmap=cmap, aspect="auto", vmin=-15, vmax=15)
 
     ax.set_xticks(range(len(null_types)))
-    ax.set_xticklabels([NULL_STYLES[nt]["label"].replace(" ", "\n") for nt in null_types],
-                       fontsize=9)
+    ax.set_xticklabels(null_labels, fontsize=11)
     ax.set_yticks(range(len(metrics)))
-    ax.set_yticklabels([METRICS_DISPLAY.get(m, m) for m in metrics], fontsize=10)
+    ax.set_yticklabels([metric_labels.get(m, m) for m in metrics], fontsize=12)
 
     for i in range(len(metrics)):
         for j in range(len(null_types)):
             val = data[i, j]
-            color = "white" if abs(val) > 7 else "black"
+            color = "white" if abs(val) > 8 else "#1a1a2e"
             text = f"{val:.1f}" if abs(val) < 100 else f"{val:.0f}"
             ax.text(j, i, text, ha="center", va="center",
-                    fontsize=9, color=color, fontweight="bold")
+                    fontsize=11, color=color, fontweight="bold")
 
-    fig.colorbar(im, ax=ax, label="Cohen's d (effect size)", shrink=0.8)
+    # Gridlines between cells
+    for i in range(len(metrics) + 1):
+        ax.axhline(i - 0.5, color="white", linewidth=2)
+    for j in range(len(null_types) + 1):
+        ax.axvline(j - 0.5, color="white", linewidth=2)
+
+    cbar = fig.colorbar(im, ax=ax, label="Cohen's d (effect size)",
+                        shrink=0.85, pad=0.02)
+    cbar.ax.tick_params(labelsize=10)
+
     ax.set_title(
-        f"Effect Sizes: Real vs. Null Models — {model_name} (G={best_coupling})\n"
-        f"|d| > 0.8 = large effect; values clipped to [-15, 15] for display",
-        fontsize=11, fontweight="bold",
+        f"Effect Sizes: Real Connectome vs. Null Models — {model_name} (G={best_coupling})",
+        fontsize=14, fontweight="bold", color=REAL_COLOR, pad=12,
     )
+    ax.text(0.5, 1.02,
+            "|d| > 0.8 = large effect  •  values clipped to [-15, 15]",
+            transform=ax.transAxes, ha="center", fontsize=11, color="#888888")
 
-    plt.tight_layout()
-    fig.savefig(output_path, bbox_inches="tight", facecolor="white")
-    print(f"Saved: {output_path}")
-    plt.close()
-
-
-def plot_wc_oscillation_highlight(wc_results: dict,
-                                  output_path: str = "figures/wc_oscillation_highlight.png"):
-    """The killer figure: real connectome oscillates, null models collapse."""
-    couplings = sorted(wc_results.keys(), key=float)
-    coupling_vals = [float(c) for c in couplings]
-
-    fig, ax = plt.subplots(figsize=(8, 5))
-
-    real_vals = [wc_results[c].get("global_variance", {}).get("real_mean", 0) for c in couplings]
-    ax.plot(coupling_vals, real_vals, "k-o", linewidth=3, markersize=8,
-            label="Real human connectome", zorder=10)
-
-    for null_type, style in NULL_STYLES.items():
-        null_vals = [wc_results[c].get("global_variance", {}).get(f"{null_type}_mean", 0)
-                     for c in couplings]
-        ax.plot(coupling_vals, null_vals, "--", color=style["color"],
-                linewidth=2, alpha=0.8, label=style["label"])
-
-    ax.set_xlabel("Global Coupling Strength (G)", fontsize=13)
-    ax.set_ylabel("Global Variance (oscillation strength)", fontsize=13)
-    ax.set_xscale("log")
-    ax.grid(True, alpha=0.3)
-    ax.spines["top"].set_visible(False)
-    ax.spines["right"].set_visible(False)
-
-    ax.annotate("Real connectome\nsustains oscillations",
-                xy=(0.01, real_vals[1]), xytext=(0.04, real_vals[1] + 0.02),
-                fontsize=10, fontweight="bold",
-                arrowprops=dict(arrowstyle="->", color="black", lw=1.5))
-
-    ax.annotate("Random wiring\ncollapses to silence",
-                xy=(0.05, 0.001), xytext=(0.15, 0.04),
-                fontsize=10, color="#E74C3C", fontweight="bold",
-                arrowprops=dict(arrowstyle="->", color="#E74C3C", lw=1.5))
-
-    ax.legend(loc="upper right", fontsize=9, framealpha=0.9)
-    ax.set_title(
-        "The Real Connectome Sustains Oscillations — Random Wiring Cannot\n"
-        "Wilson-Cowan E/I dynamics on 76-region human connectome",
-        fontsize=12, fontweight="bold",
-    )
-
-    plt.tight_layout()
-    fig.savefig(output_path, bbox_inches="tight", facecolor="white")
-    fig.savefig(output_path.replace(".png", ".svg"), bbox_inches="tight", facecolor="white")
+    fig.savefig(output_path, facecolor=fig.get_facecolor())
     print(f"Saved: {output_path}")
     plt.close()
 
@@ -218,8 +279,8 @@ if __name__ == "__main__":
     wc = load_results("results/exp01_wilson_cowan")
 
     plot_combined_hero(kuramoto, wc)
+    plot_wc_oscillation_highlight(wc)
     plot_effect_heatmap(kuramoto, "Kuramoto", "figures/effect_sizes_kuramoto.png")
     plot_effect_heatmap(wc, "Wilson-Cowan", "figures/effect_sizes_wc.png")
-    plot_wc_oscillation_highlight(wc)
 
     print("\nAll figures generated!")
